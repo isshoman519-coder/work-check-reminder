@@ -44,7 +44,7 @@ body.alarm button:not(.sub){background:var(--red)}
 </div>
 <script>
 // ★ Cloudflare Worker 주소를 여기에 넣으세요 (끝에 / 없이)
-const WORKER_URL = '여기에-worker-주소';
+const WORKER_URL = 'https://overtime-alarm.wogns2925.workers.dev';
 
 const $=id=>document.getElementById(id);
 const LS={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}};
@@ -110,7 +110,7 @@ function tick(){
 setInterval(tick,500);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){render();tick()}});
 $('enable').onclick=enable;$('start').onclick=start;$('ok').onclick=start;$('cancel').onclick=cancel;$('test').onclick=test;
-if(WORKER_URL.includes('YOUR-WORKER'))setSt('⚠ index.html 안의 WORKER_URL을 먼저 수정해 주세요');
+if(!WORKER_URL.startsWith('https://'))setSt('⚠ index.html 안의 WORKER_URL을 먼저 수정해 주세요');
 render();tick();
 if(getSub()&&'serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
 </script>
