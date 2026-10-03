@@ -1,8 +1,8 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#1d4ed8">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="근무확인">
@@ -10,263 +10,112 @@
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <title>근무확인 알리미</title>
 <style>
-:root{--bg:#f4f6fb;--fg:#111827;--card:#fff;--mut:#6b7280;--pri:#1d4ed8;--red:#dc2626}
-@media (prefers-color-scheme:dark){:root{--bg:#0f172a;--fg:#f1f5f9;--card:#1e293b;--mut:#94a3b8;--pri:#3b82f6;--red:#ef4444}}
-html,body{height:100%;margin:0}
-body{background:var(--bg);color:var(--fg);font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:20px;text-align:center;box-sizing:border-box;padding-top:max(20px,env(safe-area-inset-top));padding-bottom:max(20px,env(safe-area-inset-bottom))}
-h1{font-size:20px;margin:0}
-.card{background:var(--card);border-radius:20px;padding:26px 20px;width:100%;max-width:380px;box-shadow:0 2px 12px rgba(0,0,0,.08)}
-#time{font-size:64px;font-weight:700;font-variant-numeric:tabular-nums;margin:8px 0}
-#msg{color:var(--mut);font-size:15px;min-height:22px;line-height:1.5}
-button{width:100%;border:0;border-radius:16px;padding:20px;font-size:19px;font-weight:700;color:#fff;background:var(--pri);margin-top:14px;font-family:inherit}
-button.sub{background:transparent;color:var(--mut);font-size:14px;padding:10px;font-weight:500}
-.row{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--mut);font-size:14px;margin-top:10px}
-input{width:60px;font-size:16px;padding:6px;border-radius:8px;border:1px solid var(--mut);background:var(--card);color:var(--fg);text-align:center}
-body.alarm{background:var(--red);animation:flash .7s infinite}
-body.alarm #time{color:var(--red)}body.alarm .card{background:#fff;color:#111}
-body.alarm button:not(.sub){background:var(--red)}
-@keyframes flash{50%{filter:brightness(.75)}}
-.hide{display:none!important}#st{font-size:12px;color:var(--mut);margin-top:10px;min-height:34px;line-height:1.45;word-break:break-word}
+:root{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;color-scheme:light dark}
+body{margin:0;min-height:100svh;display:grid;place-items:center;background:#0f172a;color:#f8fafc;padding:20px;box-sizing:border-box}
+.card{width:min(100%,420px);background:#1e293b;border:1px solid #334155;border-radius:24px;padding:24px;box-sizing:border-box}
+h1{font-size:24px;margin:0 0 8px}.mut{color:#94a3b8;line-height:1.5}
+.code{font-size:30px;letter-spacing:.12em;font-weight:900;text-align:center;background:#0f172a;border-radius:16px;padding:18px 10px;margin:18px 0;user-select:all}
+button{width:100%;border:0;border-radius:15px;padding:16px;margin-top:10px;font-size:17px;font-weight:800;background:#2563eb;color:#fff}
+button.secondary{background:#334155}#st{margin-top:14px;font-size:13px;color:#cbd5e1;line-height:1.5;word-break:break-word}
+.ok{color:#86efac}.warn{color:#fca5a5}
 </style>
 </head>
 <body>
-<h1>⏱ 근무확인 알리미</h1>
 <div class="card">
-  <div id="msg"></div>
-  <div id="time" class="hide">--:--</div>
-  <button id="enable" class="hide">🔔 알림 켜기</button>
-  <button id="start" class="hide">근무확인 눌렀어요 (타이머 시작)</button>
-  <button id="ok" class="hide">✅ 근무확인 완료 · 다음 타이머</button>
-  <button id="cancel" class="sub hide">타이머 종료</button>
-  <button id="test" class="sub hide">테스트 알림 보내기</button>
-  <button id="reset" class="sub">알림 등록 초기화</button>
-  <div id="opt" class="row hide">알림 간격 <input id="min" type="number" min="1" max="59" value="50"> 분 후</div>
-  <div id="st">v3 · iPhone Web Push 수정본</div>
+  <h1>⏱ 근무확인 알리미</h1>
+  <div class="mut">PC 근무확인 버튼과 이 아이폰을 한 번만 연결하면 이후엔 PC 클릭만으로 50분 알림이 자동 예약돼요.</div>
+
+  <div class="mut" style="margin-top:18px">PC 확장프로그램에 입력할 페어링 코드</div>
+  <div id="code" class="code">----------</div>
+
+  <button id="enable">🔔 이 아이폰 알림 등록</button>
+  <button id="test" class="secondary">테스트 알림 보내기</button>
+  <button id="newcode" class="secondary">새 페어링 코드 만들기</button>
+
+  <div id="st">v4 · PC 자동연동</div>
 </div>
 
 <script>
-const WORKER_URL = 'https://overtime-alarm.wogns2925.workers.dev';
-
+const WORKER_URL='https://overtime-alarm.wogns2925.workers.dev';
 const $=id=>document.getElementById(id);
-const LS={
-  get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},
-  set:(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}
-};
-
-let uid=LS.get('uid');
-if(!uid){
-  uid=(crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)+Date.now().toString(36));
-  LS.set('uid',uid);
-}
-let endAt=+LS.get('endAt')||0;
-
-const setSt=t=>$('st').textContent=t;
-const getSub=()=>{try{return JSON.parse(LS.get('sub'))}catch(e){return null}};
 const standalone=navigator.standalone||matchMedia('(display-mode: standalone)').matches;
 const isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent);
-const fmt=ms=>{const s=Math.max(0,Math.ceil(ms/1000));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')};
+
+function makeCode(){
+  const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const arr=new Uint8Array(12);crypto.getRandomValues(arr);
+  return Array.from(arr,b=>alphabet[b%alphabet.length]).join('');
+}
+let code=localStorage.getItem('pairCode')||makeCode();
+localStorage.setItem('pairCode',code);
+$('code').textContent=code;
+
 const b64=s=>{
   const p='='.repeat((4-s.length%4)%4);
   const r=atob((s+p).replace(/-/g,'+').replace(/_/g,'/'));
   return Uint8Array.from(r,c=>c.charCodeAt(0));
 };
-const api=(path,body)=>fetch(WORKER_URL+path,{
-  method:'POST',
-  headers:{'content-type':'application/json'},
-  body:JSON.stringify({id:uid,...body})
-}).then(async r=>{
-  const j=await r.json().catch(()=>({}));
-  if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
-  return j;
-});
 
-/*
-  iOS 핵심:
-  서비스워커 등록은 페이지 로드시 미리 시작한다.
-  "알림 켜기" 버튼을 눌렀을 때는 Notification.requestPermission()을
-  다른 await보다 먼저 실행해 사용자 제스처를 보존한다.
-*/
-let swPromise=null;
-
-function prepareServiceWorker(){
-  if(!('serviceWorker' in navigator)) return Promise.reject(new Error('ServiceWorker 미지원'));
+let swPromise;
+function prepareSW(){
   if(!swPromise){
-    swPromise=navigator.serviceWorker
-      .register('./sw.js?v=3',{scope:'./'})
+    swPromise=navigator.serviceWorker.register('./sw.js?v=4',{scope:'./'})
       .then(()=>navigator.serviceWorker.ready);
   }
   return swPromise;
 }
-prepareServiceWorker().catch(e=>setSt('서비스워커 준비 실패: '+e.name+' / '+e.message));
+if('serviceWorker' in navigator) prepareSW().catch(()=>{});
 
-async function enable(){
+async function registerPhone(){
   try{
-    if(!('serviceWorker' in navigator)||!('PushManager' in window)){
-      return setSt('이 브라우저는 Web Push를 지원하지 않아요');
-    }
+    if(isIOS&&!standalone) throw new Error('홈 화면에 추가한 앱 아이콘으로 실행해 주세요.');
+    let p=Notification.permission;
+    if(p==='default') p=await Notification.requestPermission();
+    if(p!=='granted') throw new Error('알림 권한이 허용되지 않았어요.');
 
-    if(isIOS && !standalone){
-      return setSt('아이폰은 홈 화면에 추가한 뒤 홈 화면 아이콘으로 실행해야 해요');
-    }
+    $('st').textContent='서비스워커 준비 중...';
+    const reg=await prepareSW();
 
-    setSt('1/4 알림 권한 확인 중...');
-
-    // 중요: iOS에서는 사용자 클릭 직후 바로 permission 요청
-    let permission=Notification.permission;
-    if(permission==='default'){
-      permission=await Notification.requestPermission();
-    }
-
-    if(permission!=='granted'){
-      return setSt('알림 권한이 거부됐어요. iPhone 설정 → 알림 → 근무확인에서 허용해 주세요');
-    }
-
-    setSt('2/4 서비스워커 확인 중...');
-    const reg=await prepareServiceWorker();
-
-    setSt('3/4 VAPID 키 확인 중...');
-    const resp=await fetch(WORKER_URL+'/vapid',{cache:'no-store'});
-    if(!resp.ok) throw new Error('VAPID HTTP '+resp.status);
-    const pub=(await resp.text()).trim();
-    if(pub.length<50) throw new Error('VAPID 공개키 형식 이상');
-
-    setSt('4/4 Push 구독 등록 중...');
-
-    // 기존 브라우저 구독이 있으면 재사용
+    const pub=(await (await fetch(WORKER_URL+'/vapid',{cache:'no-store'})).text()).trim();
     let sub=await reg.pushManager.getSubscription();
-    if(!sub){
-      sub=await reg.pushManager.subscribe({
-        userVisibleOnly:true,
-        applicationServerKey:b64(pub)
-      });
-    }
+    if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64(pub)});
 
-    LS.set('sub',JSON.stringify(sub.toJSON ? sub.toJSON() : sub));
-    setSt('✅ 알림 등록 완료');
-    render();
+    const r=await fetch(WORKER_URL+'/register',{
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({code,sub:sub.toJSON?sub.toJSON():sub})
+    });
+    const j=await r.json();
+    if(!r.ok||!j.ok) throw new Error(j.error||('HTTP '+r.status));
 
+    $('st').innerHTML='<span class="ok">✅ 아이폰 등록 완료. 이제 PC 확장프로그램에 위 코드를 입력하세요.</span>';
   }catch(e){
-    console.error(e);
-    setSt('❌ 알림 등록 실패 ['+(e.name||'Error')+']: '+(e.message||String(e)));
+    $('st').innerHTML='<span class="warn">❌ 등록 실패: '+(e.message||e)+'</span>';
   }
 }
 
-async function start(){
-  const sub=getSub();
-  if(!sub)return setSt('먼저 알림을 등록해 주세요');
-
-  const m=Math.min(59,Math.max(1,+$('min').value||50));
-  setSt('예약 중...');
-
+async function testPush(){
   try{
-    const r=await api('/start',{sub,delayMin:m});
-    if(!r.ok)throw new Error(r.error||'오류');
-    endAt=r.first;
-    LS.set('endAt',endAt);
-    setSt('📡 '+m+'분 뒤부터 1분 간격으로 5번 알려요');
+    const r=await fetch(WORKER_URL+'/test',{
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({code})
+    });
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
+    $('st').textContent='✅ 테스트 전송 요청 완료 (응답 '+j.status+')';
   }catch(e){
-    setSt('⚠ 예약 실패 ['+(e.name||'Error')+']: '+(e.message||String(e)));
-  }
-  render();
-  tick();
-}
-
-async function cancel(){
-  endAt=0;
-  LS.set('endAt',null);
-  render();
-  try{
-    await api('/cancel',{});
-    setSt('타이머를 종료했어요');
-  }catch(e){
-    setSt('⚠ 취소 요청 실패: '+e.message);
+    $('st').textContent='❌ 테스트 실패: '+e.message;
   }
 }
 
-async function test(){
-  const sub=getSub();
-  if(!sub) return setSt('먼저 알림을 등록해 주세요');
-
-  setSt('테스트 알림 전송 중...');
-  try{
-    const r=await api('/test',{sub});
-    setSt(
-      r.status>=200&&r.status<300
-        ? '✅ 서버 전송 성공 (응답 '+r.status+') · 잠금화면 확인'
-        : '⚠ 푸시 서비스 전송 실패 (코드 '+r.status+')'
-    );
-  }catch(e){
-    setSt('⚠ 서버 연결 실패 ['+(e.name||'Error')+']: '+e.message);
-  }
-}
-
-async function resetPush(){
-  try{
-    const reg=await prepareServiceWorker();
-    const sub=await reg.pushManager.getSubscription();
-    if(sub) await sub.unsubscribe();
-  }catch(e){}
-  LS.set('sub',null);
-  endAt=0;
-  LS.set('endAt',null);
-  setSt('알림 등록 정보를 초기화했어요. 다시 알림 켜기를 눌러주세요.');
-  render();
-}
-
-function render(){
-  const need=isIOS&&!standalone;
-  const sub=getSub();
-  const run=endAt>0;
-  const alarm=run&&Date.now()>=endAt;
-
-  document.body.classList.toggle('alarm',alarm);
-
-  const show=(id,v)=>$(id).classList.toggle('hide',!v);
-  show('enable',!need&&!sub);
-  show('start',!need&&!!sub&&!run);
-  show('ok',alarm);
-  show('cancel',run);
-  show('test',!need&&!!sub&&!run);
-  show('opt',!need&&!!sub&&!run);
-  show('time',run);
-
-  $('msg').innerHTML=
-    need
-      ? '아이폰은 <b>공유 → 홈 화면에 추가</b> 후,<br>홈 화면 아이콘으로 다시 열어주세요.'
-      : alarm
-        ? '🚨 지금 근무확인 누르세요!'
-        : run
-          ? '다음 알림까지 남은 시간'
-          : !sub
-            ? '먼저 알림을 켜 주세요'
-            : '실제 근무확인을 누른 뒤, 아래 버튼을 눌러요';
-}
-
-function tick(){
-  if(!endAt)return;
-  const left=endAt-Date.now();
-  $('time').textContent=left<=0?'00:00':fmt(left);
-  if(left<=0&&!document.body.classList.contains('alarm'))render();
-}
-
-setInterval(tick,500);
-
-document.addEventListener('visibilitychange',()=>{
-  if(!document.hidden){
-    render();
-    tick();
-  }
-});
-
-$('enable').onclick=enable;
-$('start').onclick=start;
-$('ok').onclick=start;
-$('cancel').onclick=cancel;
-$('test').onclick=test;
-$('reset').onclick=resetPush;
-
-render();
-tick();
+$('enable').onclick=registerPhone;
+$('test').onclick=testPush;
+$('newcode').onclick=async()=>{
+  if(!confirm('기존 PC 연결 코드는 더 이상 사용할 수 없게 됩니다. 새 코드를 만들까요?')) return;
+  code=makeCode();localStorage.setItem('pairCode',code);$('code').textContent=code;
+  $('st').textContent='새 코드가 생성됐어요. 다시 아이폰 알림 등록을 눌러주세요.';
+};
 </script>
 </body>
 </html>
