@@ -66,216 +66,100 @@ button.secondary{background:#334155}button.ghost{background:transparent;color:#c
   <button id="test" class="secondary">테스트 알림 보내기</button>
   <button id="newcode" class="ghost">새 페어링 코드 만들기</button>
 
-  <div id="st">v7 · iPhone + Android 통합</div>
+  <div class="platform">v8 · iPhone + Android 통합</div>
+  <div id="st">서버 상태 확인 중...</div>
 </div></div>
 
 <script>
 const WORKER_URL='https://overtime-alarm.wogns2925.workers.dev';
 const $=id=>document.getElementById(id);
-
 const isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent);
 const isAndroid=/Android/.test(navigator.userAgent);
 const standalone=navigator.standalone||matchMedia('(display-mode: standalone)').matches;
-
-$('platform').textContent=isAndroid
-  ? 'Android · 강한 반복 진동 패턴 사용'
-  : isIOS
-    ? 'iPhone · iOS 기본 알림 햅틱 사용'
-    : '웹 브라우저';
-
-let firstAlarm=null;
-let serverOffset=0;
-let lastStatusAt=0;
-let statusPending=false;
-let syncFailed=false;
-
-function makeCode(){
-  const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const arr=new Uint8Array(12);
-  crypto.getRandomValues(arr);
-  return Array.from(arr,b=>alphabet[b%alphabet.length]).join('');
-}
-
+$('platform').textContent=isAndroid?'Android · 알림 진동 사용':isIOS?'iPhone · iOS 기본 알림 햅틱 사용':'웹 브라우저';
+function makeCode(){const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';const a=new Uint8Array(12);crypto.getRandomValues(a);return Array.from(a,b=>alphabet[b%alphabet.length]).join('');}
 let code=localStorage.getItem('pairCode')||makeCode();
-localStorage.setItem('pairCode',code);
-$('code').textContent=code;
-
-const b64=s=>{
-  const p='='.repeat((4-s.length%4)%4);
-  const r=atob((s+p).replace(/-/g,'+').replace(/_/g,'/'));
-  return Uint8Array.from(r,c=>c.charCodeAt(0));
-};
-
-let swPromise;
+localStorage.setItem('pairCode',code);$('code').textContent=code;
+let current=null,serverOffset=0,lastStatusAt=0,statusPending=false,mutationPending=false,epoch=0,syncFailed=true,swPromise;
+const b64=s=>Uint8Array.from(atob((s+'='.repeat((4-s.length%4)%4)).replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
 function prepareSW(){
-  if(!swPromise){
-    swPromise=navigator.serviceWorker
-      .register('./sw.js?v=7',{scope:'./'})
-      .then(()=>navigator.serviceWorker.ready);
-  }
+  if(!('serviceWorker' in navigator)) return Promise.reject(new Error('이 브라우저는 알림 등록을 지원하지 않습니다.'));
+  if(!swPromise) swPromise=navigator.serviceWorker.register('./sw.js?v=8',{scope:'./',updateViaCache:'none'}).then(()=>navigator.serviceWorker.ready).catch(e=>{swPromise=null;throw e;});
   return swPromise;
 }
 if('serviceWorker' in navigator) prepareSW().catch(()=>{});
-
-async function post(path,body={}){
-  const r=await fetch(WORKER_URL+path,{
-    signal:AbortSignal.timeout(12000),
-    method:'POST',
-    headers:{'content-type':'application/json'},
-    body:JSON.stringify({code,...body}),
-    cache:'no-store'
-  });
-  const j=await r.json().catch(()=>({}));
-  if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
-  return j;
-}
-
-async function registerPhone(){
+async function post(path,body={},requestCode=code){
+  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),15000);
   try{
-    if(isIOS&&!standalone){
-      throw new Error('아이폰은 Safari에서 홈 화면에 추가한 뒤 홈 화면 아이콘으로 실행해 주세요.');
-    }
-
-    let p=Notification.permission;
-    if(p==='default') p=await Notification.requestPermission();
-    if(p!=='granted') throw new Error('알림 권한이 허용되지 않았어요.');
-
-    $('st').textContent='알림 등록 중...';
-    const reg=await prepareSW();
-
-    const vapidResp=await fetch(WORKER_URL+'/vapid',{cache:'no-store'});
-    if(!vapidResp.ok) throw new Error('VAPID HTTP '+vapidResp.status);
-    const pub=(await vapidResp.text()).trim();
-
-    let sub=await reg.pushManager.getSubscription();
-    if(!sub){
-      sub=await reg.pushManager.subscribe({
-        userVisibleOnly:true,
-        applicationServerKey:b64(pub)
-      });
-    }
-
-    await post('/register',{sub:sub.toJSON?sub.toJSON():sub});
-    $('st').innerHTML='<span class="ok">✅ 휴대폰 알림 등록 완료</span>';
-    await refreshStatus(true);
-  }catch(e){
-    $('st').innerHTML='<span class="warn">❌ 등록 실패: '+(e.message||e)+'</span>';
-  }
+    const r=await fetch(WORKER_URL+path,{signal:controller.signal,method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:requestCode,...body}),cache:'no-store'});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||j.ok===false) throw new Error(j.error||('HTTP '+r.status));
+    if(j.apiVersion!==3) throw new Error('Cloudflare 서버 v3 업데이트가 아직 반영되지 않았습니다.');
+    return j;
+  }catch(e){if(e.name==='AbortError') throw new Error('서버 응답 시간이 초과됐습니다. 다시 확인해 주세요.');throw e;}
+  finally{clearTimeout(timeout);}
 }
-
-async function refreshStatus(silent=false){
-  if(statusPending) return;
-  statusPending=true;
-  try{
-    const j=await post('/status');
-    if(typeof j.active!=='boolean') throw new Error('서버 상태 응답 형식 확인 필요');
-    syncFailed=false;
-    serverOffset=(j.now||Date.now())-Date.now();
-    lastStatusAt=Date.now();
-    firstAlarm=(j.active&&j.first)?j.first:null;
-    renderTimer();
-
-    $('sync').textContent='마지막 확인 '+new Intl.DateTimeFormat('ko-KR',{
-      hour:'2-digit',minute:'2-digit',second:'2-digit'
-    }).format(new Date());
-
-    if(!silent){
-      $('st').textContent=j.phoneRegistered
-        ? '✅ 서버 연결 정상'
-        : '⚠ 이 페어링 코드로 등록된 휴대폰이 없습니다.';
-    }
-  }catch(e){
-    syncFailed=true;
-    renderTimer();
-    $('sync').textContent='상태 갱신 실패 · 아래 오류를 확인하세요';
-    $('st').textContent='상태 조회 실패: '+e.message;
-  }finally{
-    statusPending=false;
-  }
-}
-
-function renderTimer(){
-  if(syncFailed){
-    $('countdown').textContent='서버 상태 확인 필요';
-    $('badge').textContent='마지막 조회 정보';
-    $('badge').className='badge idle';
-    return;
-  }
-  if(!firstAlarm){
-    $('nextTime').textContent='--:--';
-    $('countdown').textContent='예약 없음';
-    $('badge').textContent='대기 중';
-    $('badge').className='badge idle';
-    return;
-  }
-
-  const dt=new Date(firstAlarm);
-  $('nextTime').textContent=String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0');
-
-  const left=firstAlarm-(Date.now()+serverOffset);
-  if(left<=0){
-    $('countdown').textContent='알림 시간 도달';
-  }else{
-    const sec=Math.ceil(left/1000);
-    const h=Math.floor(sec/3600);
-    const m=Math.floor((sec%3600)/60);
-    const s=sec%60;
-    $('countdown').textContent=
-      (h?String(h).padStart(2,'0')+':':'')+
-      String(m).padStart(2,'0')+':'+
-      String(s).padStart(2,'0')+' 남음';
-  }
-
-  $('badge').textContent='예약 진행 중';
-  $('badge').className='badge active';
-}
-
-async function testPush(){
-  try{
-    const j=await post('/test');
-    $('st').textContent='✅ 테스트 전송 요청 완료 (응답 '+j.status+')';
-  }catch(e){
-    $('st').innerHTML='<span class="warn">❌ 테스트 실패: '+e.message+'</span>';
-  }
-}
-
-$('enable').onclick=registerPhone;
-$('refresh').onclick=()=>refreshStatus(false);
-$('test').onclick=testPush;
-$('cancel').onclick=async()=>{
-  try{
-    const j=await post('/cancel');
-    if(!j.ok) throw new Error(j.error||'취소 확인 실패');
-    firstAlarm=null;syncFailed=false;renderTimer();
-    $('st').textContent='알림 예약 취소 완료';
-    const reg=await prepareSW();
-    const notices=await reg.getNotifications();
-    notices.forEach(n=>n.close());
-  }catch(e){$('st').textContent='취소 실패: '+e.message;}
-};
-$('newcode').onclick=()=>{
-  if(!confirm('새 페어링 코드를 만들면 PC 확장프로그램에도 새 코드를 입력해야 합니다. 계속할까요?')) return;
-  code=makeCode();
-  localStorage.setItem('pairCode',code);
-  $('code').textContent=code;
-  firstAlarm=null;
+async function clearNotices(){try{const reg=await prepareSW();const all=await reg.getNotifications();all.forEach(n=>n.close());}catch{}}
+function applyStatus(j){
+  if(typeof j.active!=='boolean'||(j.active&&!Number.isFinite(j.first))) throw new Error('서버 상태 응답 형식을 확인해 주세요.');
+  if(current&&j.revision<current.revision) return;
+  const changed=current?.timerId!==j.timerId;
+  current=j;syncFailed=false;serverOffset=(j.now||Date.now())-Date.now();lastStatusAt=Date.now();
   renderTimer();
-  $('st').textContent='새 코드를 만들었습니다. 휴대폰 알림 등록 후 PC 확장프로그램에도 새 코드를 입력하세요.';
+  $('sync').textContent='마지막 확인 '+new Intl.DateTimeFormat('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date());
+  if(changed||j.mode==='stopped') clearNotices();
+  $('st').textContent=j.lastPushError?j.lastPushError:!j.phoneRegistered?'휴대폰 알림 등록이 필요합니다.':j.mode==='stopped'?'퇴근 · 알림 예약 중지 완료':j.active?'서버 연결 정상 · 예약 진행 중':'서버 연결 정상 · 예약 없음';
+}
+async function refreshStatus(){
+  if(statusPending||mutationPending) return;
+  const requestEpoch=epoch,requestCode=code;statusPending=true;
+  try{const j=await post('/status',{},requestCode);if(requestEpoch===epoch&&requestCode===code) applyStatus(j);}
+  catch(e){if(requestEpoch===epoch){syncFailed=true;renderTimer();$('sync').textContent='상태 갱신 실패';$('st').textContent='상태 조회 실패: '+e.message;}}
+  finally{statusPending=false;}
+}
+function renderTimer(){
+  if(syncFailed){$('countdown').textContent='서버 상태 확인 필요';$('badge').textContent='연결 확인 필요';$('badge').className='badge idle';$('nextTime').textContent='--:--';return;}
+  if(!current?.active){$('nextTime').textContent='--:--';$('countdown').textContent=current?.mode==='stopped'?'알림 중지됨':'예약 없음';$('badge').textContent=current?.mode==='stopped'?'퇴근 · 중지':'대기 중';$('badge').className='badge idle';return;}
+  const t=new Date(current.first);$('nextTime').textContent=String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0');
+  const left=current.first-(Date.now()+serverOffset);
+  if(left<=0) $('countdown').textContent='알림 발송 확인 중';
+  else{const sec=Math.ceil(left/1000),h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;$('countdown').textContent=(h?String(h).padStart(2,'0')+':':'')+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')+' 남음';}
+  $('badge').textContent='예약 진행 중';$('badge').className='badge active';
+}
+async function mutate(action){
+  if(mutationPending) return;
+  mutationPending=true;epoch++;
+  try{await action();}catch(e){$('st').textContent='요청 실패: '+e.message;}
+  finally{mutationPending=false;refreshStatus();}
+}
+async function registerPhone(){
+  if(isIOS&&!standalone) throw new Error('Safari에서 홈 화면에 추가한 앱으로 실행해 주세요.');
+  if(!('Notification' in window)) throw new Error('알림을 지원하는 휴대폰 브라우저로 실행해 주세요.');
+  let p=Notification.permission;if(p==='default') p=await Notification.requestPermission();
+  if(p!=='granted') throw new Error('알림 권한을 허용해 주세요.');
+  $('st').textContent='알림 등록 중...';const reg=await prepareSW();
+  const r=await fetch(WORKER_URL+'/vapid',{cache:'no-store'});if(!r.ok) throw new Error('알림 서버 설정 확인 필요');
+  const pub=(await r.text()).trim();
+  let sub=await reg.pushManager.getSubscription();
+  if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64(pub)});
+  applyStatus(await post('/register',{sub:sub.toJSON()}));
+}
+$('enable').onclick=()=>mutate(registerPhone);
+$('refresh').onclick=refreshStatus;
+$('cancel').onclick=()=>mutate(async()=>{applyStatus(await post('/cancel'));clearNotices();});
+$('test').onclick=()=>mutate(async()=>{const j=await post('/test');$('st').textContent='테스트 알림 전송 요청 완료 ('+j.status+')';});
+$('newcode').onclick=()=>{
+  if(!confirm('기존 코드의 예약과 등록을 해제합니다. 새 코드는 PC에도 입력해야 합니다. 계속할까요?')) return;
+  mutate(async()=>{
+    await post('/unregister');await clearNotices();code=makeCode();localStorage.setItem('pairCode',code);$('code').textContent=code;current=null;syncFailed=true;epoch++;renderTimer();
+    $('st').textContent='새 코드가 만들어졌습니다. 휴대폰 알림 등록 후 PC에도 같은 코드를 입력하세요.';
+  });
 };
-
 setInterval(renderTimer,1000);
-
-// 앱을 열어둔 상태에서도 10초마다 서버 상태 자동 확인
-setInterval(()=>refreshStatus(true),10000);
-
-document.addEventListener('visibilitychange',()=>{
-  if(!document.hidden) refreshStatus(true);
-});
-window.addEventListener('focus',()=>{
-  if(Date.now()-lastStatusAt>3000) refreshStatus(true);
-});
-
-refreshStatus(true);
+setInterval(()=>{if(!document.hidden) refreshStatus();},10000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden) refreshStatus();});
+window.addEventListener('focus',()=>{if(Date.now()-lastStatusAt>3000) refreshStatus();});
+if('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message',e=>{if(e.data?.type==='REFRESH_STATUS') refreshStatus();});
+refreshStatus();
 </script>
-</body>
-</html>
+</body></html>
