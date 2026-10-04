@@ -10,112 +10,39 @@
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <title>근무확인 알리미</title>
 <style>
-:root{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;color-scheme:light dark}
-body{margin:0;min-height:100svh;display:grid;place-items:center;background:#0f172a;color:#f8fafc;padding:20px;box-sizing:border-box}
-.card{width:min(100%,420px);background:#1e293b;border:1px solid #334155;border-radius:24px;padding:24px;box-sizing:border-box}
-h1{font-size:24px;margin:0 0 8px}.mut{color:#94a3b8;line-height:1.5}
-.code{font-size:30px;letter-spacing:.12em;font-weight:900;text-align:center;background:#0f172a;border-radius:16px;padding:18px 10px;margin:18px 0;user-select:all}
-button{width:100%;border:0;border-radius:15px;padding:16px;margin-top:10px;font-size:17px;font-weight:800;background:#2563eb;color:#fff}
-button.secondary{background:#334155}#st{margin-top:14px;font-size:13px;color:#cbd5e1;line-height:1.5;word-break:break-word}
-.ok{color:#86efac}.warn{color:#fca5a5}
+:root{font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;color-scheme:dark;--bg:#0b1220;--card:#1e293b;--card2:#0f172a;--line:#334155;--fg:#f8fafc;--mut:#94a3b8;--blue:#2563eb;--green:#4ade80}
+*{box-sizing:border-box}body{margin:0;min-height:100svh;background:radial-gradient(circle at 50% -20%,rgba(37,99,235,.25),transparent 40%),var(--bg);color:var(--fg);padding:max(28px,env(safe-area-inset-top)) 20px max(28px,env(safe-area-inset-bottom))}.wrap{width:min(100%,440px);margin:0 auto;min-height:calc(100svh - 56px);display:flex;align-items:center}.card{width:100%;background:rgba(30,41,59,.96);border:1px solid var(--line);border-radius:26px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.25)}h1{font-size:27px;margin:0 0 8px}.desc{color:var(--mut);line-height:1.55;font-size:15px}.section{margin-top:22px;background:var(--card2);border-radius:20px;padding:18px;border:1px solid rgba(255,255,255,.05)}.label{font-size:13px;color:var(--mut);margin-bottom:7px}.code{font-size:27px;letter-spacing:.1em;font-weight:900;text-align:center;padding:13px 5px;user-select:all}.next{text-align:center}.nextTime{font-size:46px;font-weight:900;letter-spacing:-.04em;margin-top:2px}.countdown{margin-top:4px;font-size:23px;font-weight:800;color:#bfdbfe;font-variant-numeric:tabular-nums}.badge{display:inline-flex;margin-top:10px;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:800}.badge.active{background:rgba(74,222,128,.12);color:#86efac}.badge.idle{background:rgba(148,163,184,.12);color:#cbd5e1}button{width:100%;border:0;border-radius:15px;padding:16px;margin-top:10px;font-size:17px;font-weight:850;color:#fff;background:var(--blue)}button.secondary{background:#334155}button.ghost{background:transparent;color:#cbd5e1;border:1px solid #475569}#st{margin-top:14px;min-height:38px;color:#cbd5e1;font-size:13px;line-height:1.5;word-break:break-word}.ok{color:#86efac}.warn{color:#fda4af}.sync{font-size:11px;color:#64748b;text-align:center;margin-top:8px}
 </style>
 </head>
 <body>
-<div class="card">
-  <h1>⏱ 근무확인 알리미</h1>
-  <div class="mut">PC 근무확인 버튼과 이 아이폰을 한 번만 연결하면 이후엔 PC 클릭만으로 50분 알림이 자동 예약돼요.</div>
-
-  <div class="mut" style="margin-top:18px">PC 확장프로그램에 입력할 페어링 코드</div>
-  <div id="code" class="code">----------</div>
-
-  <button id="enable">🔔 이 아이폰 알림 등록</button>
-  <button id="test" class="secondary">테스트 알림 보내기</button>
-  <button id="newcode" class="secondary">새 페어링 코드 만들기</button>
-
-  <div id="st">v4 · PC 자동연동</div>
-</div>
-
+<div class="wrap"><div class="card">
+<h1>⏱ 근무확인 알리미</h1>
+<div class="desc">PC에서 근무확인 버튼을 누르면 자동으로 50분 뒤 아이폰 알림을 예약합니다.</div>
+<div class="section"><div class="label">PC 확장프로그램 페어링 코드</div><div id="code" class="code">------------</div></div>
+<div class="section next"><div class="label">다음 근무확인 알림</div><div id="nextTime" class="nextTime">--:--</div><div id="countdown" class="countdown">예약 없음</div><div id="badge" class="badge idle">대기 중</div><div id="sync" class="sync"></div></div>
+<button id="enable">🔔 이 아이폰 알림 등록</button>
+<button id="refresh" class="secondary">예약 상태 새로고침</button>
+<button id="test" class="secondary">테스트 알림 보내기</button>
+<button id="newcode" class="ghost">새 페어링 코드 만들기</button>
+<div id="st">v5 · PC 자동연동 + 예약시간 표시</div>
+</div></div>
 <script>
 const WORKER_URL='https://overtime-alarm.wogns2925.workers.dev';
 const $=id=>document.getElementById(id);
 const standalone=navigator.standalone||matchMedia('(display-mode: standalone)').matches;
 const isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent);
-
-function makeCode(){
-  const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const arr=new Uint8Array(12);crypto.getRandomValues(arr);
-  return Array.from(arr,b=>alphabet[b%alphabet.length]).join('');
-}
-let code=localStorage.getItem('pairCode')||makeCode();
-localStorage.setItem('pairCode',code);
-$('code').textContent=code;
-
-const b64=s=>{
-  const p='='.repeat((4-s.length%4)%4);
-  const r=atob((s+p).replace(/-/g,'+').replace(/_/g,'/'));
-  return Uint8Array.from(r,c=>c.charCodeAt(0));
-};
-
-let swPromise;
-function prepareSW(){
-  if(!swPromise){
-    swPromise=navigator.serviceWorker.register('./sw.js?v=4',{scope:'./'})
-      .then(()=>navigator.serviceWorker.ready);
-  }
-  return swPromise;
-}
-if('serviceWorker' in navigator) prepareSW().catch(()=>{});
-
-async function registerPhone(){
-  try{
-    if(isIOS&&!standalone) throw new Error('홈 화면에 추가한 앱 아이콘으로 실행해 주세요.');
-    let p=Notification.permission;
-    if(p==='default') p=await Notification.requestPermission();
-    if(p!=='granted') throw new Error('알림 권한이 허용되지 않았어요.');
-
-    $('st').textContent='서비스워커 준비 중...';
-    const reg=await prepareSW();
-
-    const pub=(await (await fetch(WORKER_URL+'/vapid',{cache:'no-store'})).text()).trim();
-    let sub=await reg.pushManager.getSubscription();
-    if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64(pub)});
-
-    const r=await fetch(WORKER_URL+'/register',{
-      method:'POST',
-      headers:{'content-type':'application/json'},
-      body:JSON.stringify({code,sub:sub.toJSON?sub.toJSON():sub})
-    });
-    const j=await r.json();
-    if(!r.ok||!j.ok) throw new Error(j.error||('HTTP '+r.status));
-
-    $('st').innerHTML='<span class="ok">✅ 아이폰 등록 완료. 이제 PC 확장프로그램에 위 코드를 입력하세요.</span>';
-  }catch(e){
-    $('st').innerHTML='<span class="warn">❌ 등록 실패: '+(e.message||e)+'</span>';
-  }
-}
-
-async function testPush(){
-  try{
-    const r=await fetch(WORKER_URL+'/test',{
-      method:'POST',
-      headers:{'content-type':'application/json'},
-      body:JSON.stringify({code})
-    });
-    const j=await r.json();
-    if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
-    $('st').textContent='✅ 테스트 전송 요청 완료 (응답 '+j.status+')';
-  }catch(e){
-    $('st').textContent='❌ 테스트 실패: '+e.message;
-  }
-}
-
-$('enable').onclick=registerPhone;
-$('test').onclick=testPush;
-$('newcode').onclick=async()=>{
-  if(!confirm('기존 PC 연결 코드는 더 이상 사용할 수 없게 됩니다. 새 코드를 만들까요?')) return;
-  code=makeCode();localStorage.setItem('pairCode',code);$('code').textContent=code;
-  $('st').textContent='새 코드가 생성됐어요. 다시 아이폰 알림 등록을 눌러주세요.';
-};
+let firstAlarm=null,serverOffset=0,lastStatusAt=0;
+function makeCode(){const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';const arr=new Uint8Array(12);crypto.getRandomValues(arr);return Array.from(arr,b=>alphabet[b%alphabet.length]).join('')}
+let code=localStorage.getItem('pairCode')||makeCode();localStorage.setItem('pairCode',code);$('code').textContent=code;
+const b64=s=>{const p='='.repeat((4-s.length%4)%4);const r=atob((s+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(r,c=>c.charCodeAt(0))};
+let swPromise;function prepareSW(){if(!swPromise)swPromise=navigator.serviceWorker.register('./sw.js?v=5',{scope:'./'}).then(()=>navigator.serviceWorker.ready);return swPromise}if('serviceWorker' in navigator)prepareSW().catch(()=>{});
+async function post(path,body={}){const r=await fetch(WORKER_URL+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code,...body}),cache:'no-store'});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j}
+async function registerPhone(){try{if(isIOS&&!standalone)throw new Error('홈 화면에 추가한 앱 아이콘으로 실행해 주세요.');let p=Notification.permission;if(p==='default')p=await Notification.requestPermission();if(p!=='granted')throw new Error('알림 권한이 허용되지 않았어요.');$('st').textContent='서비스워커 준비 중...';const reg=await prepareSW();const vr=await fetch(WORKER_URL+'/vapid',{cache:'no-store'});if(!vr.ok)throw new Error('VAPID HTTP '+vr.status);const pub=(await vr.text()).trim();let sub=await reg.pushManager.getSubscription();if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64(pub)});await post('/register',{sub:sub.toJSON?sub.toJSON():sub});$('st').innerHTML='<span class="ok">✅ 아이폰 등록 완료</span>';await refreshStatus()}catch(e){$('st').innerHTML='<span class="warn">❌ 등록 실패: '+(e.message||e)+'</span>'}}
+async function refreshStatus(silent=false){try{const j=await post('/status');serverOffset=(j.now||Date.now())-Date.now();lastStatusAt=Date.now();firstAlarm=(j.active&&j.first)?j.first:null;renderTimer();$('sync').textContent='마지막 확인 '+new Intl.DateTimeFormat('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date());if(!silent)$('st').textContent=j.phoneRegistered?'✅ 서버 연결 정상':'⚠ 이 페어링 코드로 등록된 아이폰이 없습니다.'}catch(e){if(!silent)$('st').innerHTML='<span class="warn">⚠ 상태 조회 실패: '+e.message+'</span>'}}
+function renderTimer(){if(!firstAlarm){$('nextTime').textContent='--:--';$('countdown').textContent='예약 없음';$('badge').textContent='대기 중';$('badge').className='badge idle';return}const dt=new Date(firstAlarm);$('nextTime').textContent=String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0');const left=firstAlarm-(Date.now()+serverOffset);if(left<=0){$('countdown').textContent='알림 시간 도달'}else{const sec=Math.ceil(left/1000),h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;$('countdown').textContent=(h?String(h).padStart(2,'0')+':':'')+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')+' 남음'}$('badge').textContent='예약 진행 중';$('badge').className='badge active'}
+async function testPush(){try{const j=await post('/test');$('st').textContent='✅ 테스트 전송 요청 완료 (응답 '+j.status+')'}catch(e){$('st').innerHTML='<span class="warn">❌ 테스트 실패: '+e.message+'</span>'}}
+$('enable').onclick=registerPhone;$('refresh').onclick=()=>refreshStatus(false);$('test').onclick=testPush;$('newcode').onclick=()=>{if(!confirm('새 페어링 코드를 만들면 PC 확장프로그램에도 새 코드를 다시 입력해야 합니다. 계속할까요?'))return;code=makeCode();localStorage.setItem('pairCode',code);$('code').textContent=code;firstAlarm=null;renderTimer();$('st').textContent='새 코드가 만들어졌어요. 아이폰 등록을 다시 한 뒤 PC 확장프로그램에도 새 코드를 입력하세요.'};
+setInterval(renderTimer,1000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshStatus(true)});window.addEventListener('focus',()=>{if(Date.now()-lastStatusAt>5000)refreshStatus(true)});refreshStatus(true);
 </script>
 </body>
 </html>
