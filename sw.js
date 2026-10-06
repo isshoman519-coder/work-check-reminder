@@ -1,4 +1,5 @@
-// v9: prefer the device's notification vibration; offer an explicit pattern for comparison.
+// v10: always request vibration explicitly; use a short pattern by default.
+const BASIC_VIBRATION=[500,200,500];
 const STRONG_VIBRATION=[450,120,450,120,900,160,450,120,900];
 const MODE_CACHE='work-check-notification-settings';
 const MODE_KEY=new URL('./notification-vibration-mode',self.registration.scope).href;
@@ -12,8 +13,8 @@ async function showNotice(test=false,requestedMode){
     icon:'./icon-192.png',badge:'./icon-192.png',
     tag:test?'work-check-vibration-test':'work-check-reminder',renotify:true,silent:false,
     requireInteraction:true,data:{url:'./',test}};
-  if(mode==='pattern') options.vibrate=STRONG_VIBRATION;
-  await self.registration.showNotification(test?'진동 확인 · '+(mode==='pattern'?'반복 패턴':'기기 기본'):'🔔 근무확인 시간입니다',options);
+  options.vibrate=mode==='pattern'?STRONG_VIBRATION:BASIC_VIBRATION;
+  await self.registration.showNotification(test?'진동 확인 · '+(mode==='pattern'?'반복 패턴':'기본 패턴'):'🔔 근무확인 시간입니다',options);
 }
 self.addEventListener('install',()=>self.skipWaiting());
 self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
@@ -24,7 +25,7 @@ self.addEventListener('message',event=>{
       const mode=event.data.mode==='pattern'?'pattern':'system';
       if(event.data.type==='SET_VIBRATION_MODE') await (await caches.open(MODE_CACHE)).put(MODE_KEY,new Response(mode));
       if(event.data.type==='TEST_NOTIFICATION') await showNotice(true,mode);
-      event.ports[0]?.postMessage({ok:true,version:9,mode:await readMode()});
+      event.ports[0]?.postMessage({ok:true,version:10,mode:await readMode()});
     }catch(e){event.ports[0]?.postMessage({ok:false,error:e.message});}
   })());
 });

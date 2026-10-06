@@ -66,14 +66,14 @@ button.secondary{background:#334155}button.ghost{background:transparent;color:#c
   <button id="test" class="secondary">테스트 알림 보내기</button>
   <button id="newcode" class="ghost">새 페어링 코드 만들기</button>
 
-  <div class="platform">v9 · iPhone + Android 통합</div>
+  <div class="platform">v10 · iPhone + Android 통합</div>
 
   <div id="androidHelp" class="section" hidden>
     <div class="label">갤럭시 · Android 진동 확인</div>
     <p class="desc">진동은 휴대폰 알림 설정에 따라 달라집니다. 아래 테스트로 직접 확인해 주세요.</p>
     <label for="vibrationMode">알림 진동 방식</label>
     <select id="vibrationMode" style="width:100%;padding:12px;margin:8px 0;font-size:16px">
-      <option value="system">기기 기본 진동 (권장)</option>
+      <option value="system">기본 진동 패턴 (권장)</option>
       <option value="pattern">반복 진동 패턴 요청</option>
     </select>
     <button id="localTest" class="secondary">이 폰에서 알림·진동 확인</button>
@@ -109,7 +109,7 @@ let current=null,serverOffset=0,lastStatusAt=0,statusPending=false,mutationPendi
 const b64=s=>Uint8Array.from(atob((s+'='.repeat((4-s.length%4)%4)).replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
 function prepareSW(){
   if(!('serviceWorker' in navigator)) return Promise.reject(new Error('이 브라우저는 알림 등록을 지원하지 않습니다.'));
-  if(!swPromise) swPromise=navigator.serviceWorker.register('./sw.js?v=9',{scope:'./',updateViaCache:'none'}).then(()=>navigator.serviceWorker.ready).catch(e=>{swPromise=null;throw e;});
+  if(!swPromise) swPromise=navigator.serviceWorker.register('./sw.js?v=10',{scope:'./',updateViaCache:'none'}).then(()=>navigator.serviceWorker.ready).catch(e=>{swPromise=null;throw e;});
   return swPromise;
 }
 if('serviceWorker' in navigator) prepareSW().catch(()=>{});
@@ -200,7 +200,7 @@ async function checkNotificationVersion(){
   try{
     const info=await askSW(await prepareSW(),{type:'GET_VERSION'});
     $('vibrationMode').value=info.mode;
-    $('vibrationStatus').textContent='알림 기능 v'+info.version+' · '+(info.mode==='pattern'?'반복 패턴 요청':'기기 기본 진동');
+    $('vibrationStatus').textContent='알림 기능 v'+info.version+' · '+(info.mode==='pattern'?'반복 패턴 요청':'기본 진동 패턴');
   }catch(e){$('vibrationStatus').textContent=e.message;}
 }
 $('androidHelp').hidden=!isAndroid;
@@ -228,4 +228,5 @@ checkNotificationVersion();
 refreshStatus();
 </script>
 </body></html>
+
 
