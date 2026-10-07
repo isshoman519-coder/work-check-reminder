@@ -1,6 +1,6 @@
-// v10: always request vibration explicitly; use a short pattern by default.
+// v11: preserve alerts during routine status sync; report notification runtime version.
 const BASIC_VIBRATION=[500,200,500];
-const STRONG_VIBRATION=[450,120,450,120,900,160,450,120,900];
+const REPEATED_VIBRATION=[450,120,450,120,900,160,450,120,900];
 const MODE_CACHE='work-check-notification-settings';
 const MODE_KEY=new URL('./notification-vibration-mode',self.registration.scope).href;
 async function readMode(){
@@ -12,8 +12,8 @@ async function showNotice(test=false,requestedMode){
   const options={body:test?'이 알림을 길게 눌러 소리·진동 설정을 확인하세요.':'지금 PC에서 근무확인을 눌러주세요.',
     icon:'./icon-192.png',badge:'./icon-192.png',
     tag:test?'work-check-vibration-test':'work-check-reminder',renotify:true,silent:false,
-    requireInteraction:true,data:{url:'./',test}};
-  options.vibrate=mode==='pattern'?STRONG_VIBRATION:BASIC_VIBRATION;
+    requireInteraction:true,timestamp:Date.now(),data:{url:'./',test,createdAt:Date.now()}};
+  options.vibrate=mode==='pattern'?REPEATED_VIBRATION:BASIC_VIBRATION;
   await self.registration.showNotification(test?'진동 확인 · '+(mode==='pattern'?'반복 패턴':'기본 패턴'):'🔔 근무확인 시간입니다',options);
 }
 self.addEventListener('install',()=>self.skipWaiting());
@@ -25,7 +25,7 @@ self.addEventListener('message',event=>{
       const mode=event.data.mode==='pattern'?'pattern':'system';
       if(event.data.type==='SET_VIBRATION_MODE') await (await caches.open(MODE_CACHE)).put(MODE_KEY,new Response(mode));
       if(event.data.type==='TEST_NOTIFICATION') await showNotice(true,mode);
-      event.ports[0]?.postMessage({ok:true,version:10,mode:await readMode()});
+      event.ports[0]?.postMessage({ok:true,version:11,mode:await readMode()});
     }catch(e){event.ports[0]?.postMessage({ok:false,error:e.message});}
   })());
 });

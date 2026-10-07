@@ -64,13 +64,16 @@ button.secondary{background:#334155}button.ghost{background:transparent;color:#c
   <button id="refresh" class="secondary">예약 상태 새로고침</button>
   <button id="cancel" class="secondary">퇴근 · 알림 예약 중지</button>
   <button id="test" class="secondary">테스트 알림 보내기</button>
+  <div id="pushTestStatus" class="platform" role="status"></div>
   <button id="newcode" class="ghost">새 페어링 코드 만들기</button>
 
-  <div class="platform">v10 · iPhone + Android 통합</div>
+  <div class="platform">v11 · iPhone + Android 통합</div>
+  <div id="notificationVersion" class="platform" role="status">알림 기능 업데이트 확인 중...</div>
+  <button id="updateApp" class="ghost">앱 업데이트 확인</button>
 
   <div id="androidHelp" class="section" hidden>
     <div class="label">갤럭시 · Android 진동 확인</div>
-    <p class="desc">진동은 휴대폰 알림 설정에 따라 달라집니다. 아래 테스트로 직접 확인해 주세요.</p>
+    <p class="desc">진동 길이와 반복을 요청하는 설정입니다. 진동 세기는 휴대폰이 정하며, 브라우저가 패턴을 적용하지 않을 수 있습니다.</p>
     <label for="vibrationMode">알림 진동 방식</label>
     <select id="vibrationMode" style="width:100%;padding:12px;margin:8px 0;font-size:16px">
       <option value="system">기본 진동 패턴 (권장)</option>
@@ -97,6 +100,7 @@ button.secondary{background:#334155}button.ghost{background:transparent;color:#c
 
 <script>
 const WORKER_URL='https://overtime-alarm.wogns2925.workers.dev';
+const APP_VERSION=11;
 const $=id=>document.getElementById(id);
 const isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent);
 const isAndroid=/Android/.test(navigator.userAgent);
@@ -109,7 +113,7 @@ let current=null,serverOffset=0,lastStatusAt=0,statusPending=false,mutationPendi
 const b64=s=>Uint8Array.from(atob((s+'='.repeat((4-s.length%4)%4)).replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
 function prepareSW(){
   if(!('serviceWorker' in navigator)) return Promise.reject(new Error('이 브라우저는 알림 등록을 지원하지 않습니다.'));
-  if(!swPromise) swPromise=navigator.serviceWorker.register('./sw.js?v=10',{scope:'./',updateViaCache:'none'}).then(()=>navigator.serviceWorker.ready).catch(e=>{swPromise=null;throw e;});
+  if(!swPromise) swPromise=navigator.serviceWorker.register('./sw.js?v=11',{scope:'./',updateViaCache:'none'}).then(()=>navigator.serviceWorker.ready).catch(e=>{swPromise=null;throw e;});
   return swPromise;
 }
 if('serviceWorker' in navigator) prepareSW().catch(()=>{});
@@ -124,15 +128,32 @@ async function post(path,body={},requestCode=code){
   }catch(e){if(e.name==='AbortError') throw new Error('서버 응답 시간이 초과됐습니다. 다시 확인해 주세요.');throw e;}
   finally{clearTimeout(timeout);}
 }
-async function clearNotices(){try{const reg=await prepareSW();const all=await reg.getNotifications();all.forEach(n=>n.close());}catch{}}
+async function clearNotices(before=Date.now(),includeTests=false){
+  try{
+    const reg=await prepareSW();const all=await reg.getNotifications();
+    all.forEach(n=>{
+      const reminder=n.tag==='work-check-reminder'&&!n.data?.test;
+      const test=n.tag==='work-check-vibration-test'||n.data?.test;
+      const created=n.data?.createdAt||n.timestamp||0;
+      if((reminder||(includeTests&&test))&&created<=before) n.close();
+    });
+  }catch{}
+}
+function shouldClearOldReminders(previous,next){
+  if(!previous) return false;
+  // Completion and routine status polling must never dismiss a newly displayed alert.
+  const stopped=next.mode==='stopped'&&previous.mode!=='stopped';
+  const restarted=next.active&&!!next.timerId&&previous.timerId!==next.timerId;
+  return stopped||restarted;
+}
 function applyStatus(j){
   if(typeof j.active!=='boolean'||(j.active&&!Number.isFinite(j.first))) throw new Error('서버 상태 응답 형식을 확인해 주세요.');
   if(current&&j.revision<current.revision) return;
-  const changed=current?.timerId!==j.timerId;
+  const clearOld=shouldClearOldReminders(current,j);
   current=j;syncFailed=false;serverOffset=(j.now||Date.now())-Date.now();lastStatusAt=Date.now();
   renderTimer();
   $('sync').textContent='마지막 확인 '+new Intl.DateTimeFormat('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date());
-  if(changed||j.mode==='stopped') clearNotices();
+  if(clearOld) clearNotices();
   $('st').textContent=j.lastPushError?j.lastPushError:!j.phoneRegistered?'휴대폰 알림 등록이 필요합니다.':j.mode==='stopped'?'퇴근 · 알림 예약 중지 완료':j.active?'서버 연결 정상 · 예약 진행 중':'서버 연결 정상 · 예약 없음';
 }
 async function refreshStatus(){
@@ -171,12 +192,21 @@ async function registerPhone(){
 }
 $('enable').onclick=()=>mutate(registerPhone);
 $('refresh').onclick=refreshStatus;
-$('cancel').onclick=()=>mutate(async()=>{applyStatus(await post('/cancel'));clearNotices();});
-$('test').onclick=()=>mutate(async()=>{const j=await post('/test');$('st').textContent='테스트 알림 전송 요청 완료 ('+j.status+')';});
+$('cancel').onclick=()=>mutate(async()=>{applyStatus(await post('/cancel'));await clearNotices();});
+$('test').onclick=async()=>{
+  if($('test').disabled) return;
+  $('test').disabled=true;$('pushTestStatus').textContent='테스트 알림 요청 중...';
+  try{
+    await currentNotificationWorker();
+    const j=await post('/test');
+    $('pushTestStatus').textContent='전송 요청 완료 ('+j.status+'). 실제 알림과 진동은 휴대폰에서 확인해 주세요.';
+  }catch(e){$('pushTestStatus').textContent='테스트 실패: '+e.message;}
+  finally{$('test').disabled=false;}
+};
 $('newcode').onclick=()=>{
   if(!confirm('기존 코드의 예약과 등록을 해제합니다. 새 코드는 PC에도 입력해야 합니다. 계속할까요?')) return;
   mutate(async()=>{
-    await post('/unregister');await clearNotices();code=makeCode();localStorage.setItem('pairCode',code);$('code').textContent=code;current=null;syncFailed=true;epoch++;renderTimer();
+    await post('/unregister');await clearNotices(Date.now(),true);code=makeCode();localStorage.setItem('pairCode',code);$('code').textContent=code;current=null;syncFailed=true;epoch++;renderTimer();
     $('st').textContent='새 코드가 만들어졌습니다. 휴대폰 알림 등록 후 PC에도 같은 코드를 입력하세요.';
   });
 };
@@ -196,22 +226,33 @@ function askSW(reg,message){
   });
 }
 async function checkNotificationVersion(){
-  if(!isAndroid) return;
   try{
     const info=await askSW(await prepareSW(),{type:'GET_VERSION'});
+    $('notificationVersion').textContent=info.version===APP_VERSION?'알림 기능 v'+info.version+' · 업데이트 완료':'알림 기능 v'+info.version+' · 업데이트 중: 앱을 닫고 다시 열어주세요.';
+    if(!isAndroid) return;
     $('vibrationMode').value=info.mode;
     $('vibrationStatus').textContent='알림 기능 v'+info.version+' · '+(info.mode==='pattern'?'반복 패턴 요청':'기본 진동 패턴');
-  }catch(e){$('vibrationStatus').textContent=e.message;}
+  }catch(e){$('notificationVersion').textContent=e.message;}
 }
+async function currentNotificationWorker(){
+  const reg=await prepareSW();const info=await askSW(reg,{type:'GET_VERSION'});
+  if(info.version!==APP_VERSION) throw new Error('알림 기능 업데이트 중입니다. 앱을 닫고 다시 열어주세요.');
+  return reg;
+}
+$('updateApp').onclick=async()=>{
+  $('notificationVersion').textContent='업데이트 확인 중...';
+  try{const reg=await prepareSW();await reg.update();await checkNotificationVersion();}
+  catch(e){$('notificationVersion').textContent='업데이트 확인 실패: '+e.message;}
+};
 $('androidHelp').hidden=!isAndroid;
 $('vibrationMode').onchange=async()=>{
-  try{await askSW(await prepareSW(),{type:'SET_VIBRATION_MODE',mode:$('vibrationMode').value});$('vibrationStatus').textContent='진동 방식을 저장했습니다. 테스트로 실제 진동을 확인하세요.';}
+  try{await askSW(await currentNotificationWorker(),{type:'SET_VIBRATION_MODE',mode:$('vibrationMode').value});$('vibrationStatus').textContent='진동 방식을 저장했습니다. 테스트로 실제 진동을 확인하세요.';}
   catch(e){$('vibrationStatus').textContent=e.message;}
 };
 $('localTest').onclick=async()=>{
   try{
     if(!('Notification' in window)||Notification.permission!=='granted') throw new Error('먼저 「이 휴대폰 알림 등록」을 눌러 알림을 허용하세요.');
-    await askSW(await prepareSW(),{type:'TEST_NOTIFICATION',mode:$('vibrationMode').value});
+    await askSW(await currentNotificationWorker(),{type:'TEST_NOTIFICATION',mode:$('vibrationMode').value});
     $('vibrationStatus').textContent='알림 표시 요청 완료. 실제 진동은 직접 확인하고, 안 울리면 알림을 길게 눌러 설정을 확인하세요.';
   }catch(e){$('vibrationStatus').textContent=e.message;}
 };
