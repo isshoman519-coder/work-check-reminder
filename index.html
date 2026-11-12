@@ -67,7 +67,7 @@ button.secondary{background:#334155}button.ghost{background:transparent;color:#c
   <div id="pushTestStatus" class="platform" role="status"></div>
   <button id="newcode" class="ghost">새 페어링 코드 만들기</button>
 
-  <div class="platform">v11 · iPhone + Android 통합</div>
+  <div class="platform">v12 · iPhone + Android 통합</div>
   <div id="notificationVersion" class="platform" role="status">알림 기능 업데이트 확인 중...</div>
   <button id="updateApp" class="ghost">앱 업데이트 확인</button>
 
@@ -100,7 +100,7 @@ button.secondary{background:#334155}button.ghost{background:transparent;color:#c
 
 <script>
 const WORKER_URL='https://overtime-alarm.wogns2925.workers.dev';
-const APP_VERSION=11;
+const APP_VERSION=12;
 const $=id=>document.getElementById(id);
 const isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent);
 const isAndroid=/Android/.test(navigator.userAgent);
@@ -113,7 +113,7 @@ let current=null,serverOffset=0,lastStatusAt=0,statusPending=false,mutationPendi
 const b64=s=>Uint8Array.from(atob((s+'='.repeat((4-s.length%4)%4)).replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
 function prepareSW(){
   if(!('serviceWorker' in navigator)) return Promise.reject(new Error('이 브라우저는 알림 등록을 지원하지 않습니다.'));
-  if(!swPromise) swPromise=navigator.serviceWorker.register('./sw.js?v=11',{scope:'./',updateViaCache:'none'}).then(()=>navigator.serviceWorker.ready).catch(e=>{swPromise=null;throw e;});
+  if(!swPromise) swPromise=navigator.serviceWorker.register('./sw.js?v=12',{scope:'./',updateViaCache:'none'}).then(()=>navigator.serviceWorker.ready).catch(e=>{swPromise=null;throw e;});
   return swPromise;
 }
 if('serviceWorker' in navigator) prepareSW().catch(()=>{});
@@ -132,7 +132,7 @@ async function clearNotices(before=Date.now(),includeTests=false){
   try{
     const reg=await prepareSW();const all=await reg.getNotifications();
     all.forEach(n=>{
-      const reminder=n.tag==='work-check-reminder'&&!n.data?.test;
+      const reminder=(n.tag==='work-check-reminder'||n.tag.startsWith('work-check-reminder-'))&&!n.data?.test;
       const test=n.tag==='work-check-vibration-test'||n.data?.test;
       const created=n.data?.createdAt||n.timestamp||0;
       if((reminder||(includeTests&&test))&&created<=before) n.close();
@@ -269,5 +269,3 @@ checkNotificationVersion();
 refreshStatus();
 </script>
 </body></html>
-
-
