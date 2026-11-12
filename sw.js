@@ -1,3 +1,5 @@
+// v15 (worker 간격 150ms)
+// v14: iOS 알림 표시를 순서 대기 없이 즉시 실행(화면 켜짐/꺼짐과 무관하게 빠르게)
 // v13: iPhone은 같은 tag로 교체(화면엔 1개), 연속 푸시마다 알림 재요청(renotify)
 // IOS_REPLACE=false 로 바꾸면 v12 방식(매번 새 알림 후 이전 알림 닫기)으로 돌아갑니다.
 const IOS_REPLACE=true;
@@ -5,7 +7,6 @@ const REMINDER_TAG='work-check-reminder';
 const userAgent=self.navigator.userAgent||'';
 const IS_IOS=/iPhone|iPad|iPod/i.test(userAgent);
 const IS_ANDROID=/Android/i.test(userAgent);
-let iosNotice=Promise.resolve();
 const BASIC_VIBRATION=[500,200,500];
 const REPEATED_VIBRATION=[450,120,450,120,900,160,450,120,900];
 const ANDROID_VIBRATION=[500,200,500,200,900];
@@ -42,18 +43,12 @@ self.addEventListener('message',event=>{
       const mode=event.data.mode==='pattern'?'pattern':'system';
       if(event.data.type==='SET_VIBRATION_MODE') await (await caches.open(MODE_CACHE)).put(MODE_KEY,new Response(mode));
       if(event.data.type==='TEST_NOTIFICATION') await showNotice(true,mode);
-      event.ports[0]?.postMessage({ok:true,version:13,mode:await readMode()});
+      event.ports[0]?.postMessage({ok:true,version:15,mode:await readMode()});
     }catch(e){event.ports[0]?.postMessage({ok:false,error:e.message});}
   })());
 });
 self.addEventListener('push',event=>event.waitUntil((async()=>{
-  if(IS_IOS){
-    const notice=iosNotice.then(()=>showNotice());
-    iosNotice=notice.catch(()=>{});
-    await notice;
-  }else{
-    await showNotice();
-  }
+  await showNotice();
   for(const client of await self.clients.matchAll({type:'window',includeUncontrolled:true})) client.postMessage({type:'REFRESH_STATUS'});
 })()));
 self.addEventListener('notificationclick',event=>{
