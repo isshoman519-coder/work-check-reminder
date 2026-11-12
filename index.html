@@ -48,7 +48,7 @@ button.secondary{background:#334155}button.ghost{background:transparent;color:#c
 
   <div class="section">
     <div class="label">PC 확장프로그램 페어링 코드</div>
-    <div id="code" class="code">------</div>
+    <div id="code" class="code">----</div>
     <div id="platform" class="platform"></div>
   </div>
 
@@ -106,7 +106,7 @@ const isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent);
 const isAndroid=/Android/.test(navigator.userAgent);
 const standalone=navigator.standalone||matchMedia('(display-mode: standalone)').matches;
 $('platform').textContent=isAndroid?'Android · 진동 설정 확인 가능':isIOS?'iPhone · iOS 기본 알림 햅틱 사용':'웹 브라우저';
-function makeCode(){const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';const a=new Uint8Array(6);crypto.getRandomValues(a);return Array.from(a,b=>alphabet[b%alphabet.length]).join('');}
+function makeCode(){const a=new Uint32Array(1);crypto.getRandomValues(a);return String(a[0]%10000).padStart(4,'0');}
 let code=localStorage.getItem('pairCode')||makeCode();
 localStorage.setItem('pairCode',code);$('code').textContent=code;
 let current=null,serverOffset=0,lastStatusAt=0,statusPending=false,mutationPending=false,epoch=0,syncFailed=true,swPromise;
